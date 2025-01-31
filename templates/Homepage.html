@@ -1,96 +1,187 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flask Cohere App</title>
-
+    <title>Chatbot</title>
     <style>
         body {
-            font-family: 'Arial', sans-serif;
-            background-color: #f4f4f4;
+            font-family: Arial, sans-serif;
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
         }
 
-        h1 {
-            text-align: center;
-            color: #333;
-        }
-
-        form {
-            max-width: 600px;
-            margin: 20px auto;
+        /* Der Container für den Chatbot */
+        #chat-container {
+            position: fixed;
+            bottom: 20px;
+            right: 4%;
+            width: 350px;
+            height: 400px;
             background-color: #fff;
-            padding: 20px;
             border-radius: 8px;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            display: none; /* Anfangs ausgeblendet */
+            flex-direction: column;
+            overflow: hidden;
+            z-index: 9999;
         }
 
-        label {
-            display: block;
-            margin-bottom: 10px;
-            font-weight: bold;
-        }
-
-        input {
-            width: 100%;
+        /* Kopfzeile des Chatbots */
+        #chat-header {
+            background-color: #4CAF50;
+            color: white;
             padding: 10px;
-            margin-bottom: 15px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            box-sizing: border-box;
+            font-size: 16px;
+            text-align: center;
+            cursor: pointer;
         }
 
-        button {
-            background-color: #4caf50;
-            color: #fff;
-            padding: 10px 15px;
+        /* Der Bereich für die Nachrichten */
+        #chat-messages {
+            flex: 1;
+            padding: 10px;
+            overflow-y: auto;
+            background-color: #f9f9f9;
+        }
+
+        /* Eingabefeld und Absenden-Button */
+        #chat-input {
+            display: flex;
+            border-top: 1px solid #ccc;
+        }
+
+        #chat-input input {
+            width: 80%;
+            padding: 10px;
+            border: none;
+            border-radius: 4px;
+            margin: 5px;
+        }
+
+        #chat-input button {
+            width: 20%;
+            padding: 10px;
+            background-color: #4CAF50;
+            color: white;
             border: none;
             border-radius: 4px;
             cursor: pointer;
         }
 
-        button:hover {
+        #chat-input button:hover {
             background-color: #45a049;
         }
 
-        h2 {
-            margin-top: 20px;
-            color: #333;
+        /* Der Schaltflächen-Container für das Minimieren und Öffnen des Chatbots */
+        #chat-toggle {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            background-color: #4CAF50;
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 50px;
+            cursor: pointer;
+            z-index: 10000;
         }
 
-        p {
-            color: #555;
+        #chat-toggle:hover {
+            background-color: #45a049;
         }
 
-        /* New style for the output boundary */
-        .output-container {
-            max-width: 600px;
-            margin: 20px auto;
-            background-color: #fff;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        /* Nachrichten */
+        .chat-message {
+            margin: 10px 0;
+            padding: 8px;
+            background-color: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        .chat-message.user {
+            background-color: #d1f1d1;
+            text-align: right;
+        }
+
+        .chat-message.bot {
+            background-color: #f1f1f1;
+            text-align: left;
         }
     </style>
 </head>
 <body>
-    <h1>ChatBot</h1>
 
-    <form method="post" action="{{ url_for('home') }}">
-        {{ form.hidden_tag() }}
-        <label for="text">Enter text to search:</label>
-        {{ form.text(size=40) }}
-        {{ form.submit() }}
-    </form>
+    <!-- Schaltfläche zum Öffnen und Schließen des Chatbots -->
+    <div id="chat-toggle" onclick="toggleChat()">💬</div>
 
-    {% if output %}
-        <div class="output-container">
-            <h2>Generated Output:</h2>
-            <p>{{ output }}</p>
+    <!-- Der Chatbot-Container -->
+    <div id="chat-container">
+        <div id="chat-header" onclick="toggleChat()">Chatbot - Klicken, um zu schließen</div>
+
+        <!-- Bereich für die Nachrichten -->
+        <div id="chat-messages"></div>
+
+        <!-- Eingabebereich -->
+        <div id="chat-input">
+            <input type="text" id="user-input" placeholder="Geben Sie eine Nachricht ein..." />
+            <button onclick="sendMessage()">Senden</button>
         </div>
-    {% endif %}
+    </div>
+
+    <script>
+        // Funktion, um den Chatbot zu öffnen oder zu schließen
+        function toggleChat() {
+            var chatContainer = document.getElementById("chat-container");
+            if (chatContainer.style.display === "none" || chatContainer.style.display === "") {
+                chatContainer.style.display = "flex";
+            } else {
+                chatContainer.style.display = "none";
+            }
+        }
+
+        // Funktion zum Senden der Nachricht
+        function sendMessage() {
+            var userInput = document.getElementById("user-input").value;
+            if (userInput.trim() === "") return;
+
+            // Zeige die Nachricht des Benutzers im Chat
+            var messageContainer = document.createElement("div");
+            messageContainer.classList.add("chat-message", "user");
+            messageContainer.innerText = userInput;
+            document.getElementById("chat-messages").appendChild(messageContainer);
+
+            // Leere das Eingabefeld
+            document.getElementById("user-input").value = "";
+
+            // Hier könnte deine Chatbot-Logik stehen
+            var botResponse = getBotResponse(userInput);
+
+            // Zeige die Antwort des Chatbots im Chat
+            setTimeout(function() {
+                var botMessageContainer = document.createElement("div");
+                botMessageContainer.classList.add("chat-message", "bot");
+                botMessageContainer.innerText = botResponse;
+                document.getElementById("chat-messages").appendChild(botMessageContainer);
+
+                // Scroll zum neuesten Beitrag
+                document.getElementById("chat-messages").scrollTop = document.getElementById("chat-messages").scrollHeight;
+            }, 500);
+        }
+
+        // Einfache Bot-Antworten basierend auf der Benutzereingabe
+        function getBotResponse(input) {
+            const responses = {
+                "hallo": "Hallo! Wie kann ich dir helfen?",
+                "wie geht es dir?": "Mir geht es gut, danke der Nachfrage!",
+                "was kannst du?": "Ich kann einfache Fragen beantworten.",
+                "tschüss": "Auf Wiedersehen!"
+            };
+            return responses[input.toLowerCase()] || "Entschuldigung, das habe ich nicht verstanden.";
+        }
+    </script>
+
 </body>
 </html>
