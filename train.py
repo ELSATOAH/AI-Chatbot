@@ -1,58 +1,113 @@
-from transformers import Trainer, TrainingArguments, AutoModelForCasualLM, AutoTokenizer
-import datasets
+import json
+import numpy as np
+import faiss
+from sentence_transformers import SentenceTransformer
+from transformers import GPT2Tokenizer, GPT2LMHeadModel, Trainer, TrainingArguments
+import torch
 
-modelName= "gpt2"
-tokenizer = AutoTokenizer.from_pretrained(modelName)
+# Laden der Artikeldaten
 
-# Trainingsdaten
-data= datasets.Dataset.from_dict({
-    "text": ["Hallo! Wie kann ich dir helfen?", "Mir geht es gut, danke der Nachfrage!", "Ich kann einfache Fragen beantworten.", "Auf Wiedersehen!"]
-})
+with open("data/articles.json", "r", encoding='utf-8') as file:
+    articles = json.load(file)
 
-# Laden von großen Daten (z.B. aus einer CSV-Datei)
-#dataset = datasets.load_dataset('csv', data_files='path_to_your_large_dataset.csv')
+# Erstellen von Trainingsdaten für das GPT-2-Modell
 
-# Tokenisierung optimiert für große Datasets
-#def tokenize_function(examples):
-#    return tokenizer(examples['text'], padding="max_length", truncation=True)
+# Erstellen von Eingabe- und Ausgabepaaren basierend auf Artikeldaten
+train_texts = []
+for product in articles:
+    context = (
+        f"Produktname: {product['Description']}\n"
+        f"Preis: {product['Unit Cost']} Euro\n"
+        f"Farbe: {product['Colour']}\n"
+        f"Beschreibung: {product.get('Description 2', 'Keine zusätzliche Beschreibung')}\n\n"
+        f"Kunde: Wie viel kostet die {product['Description']}?\n"
+        f"Antwort: Die {product['Description']} kostet {product['Unit Cost']} Euro.\n"
+        f"###\n"
+    )
+    train_texts.append(context)
 
-# Tokenisieren des gesamten Datasets
-#tokenized_data = dataset.map(tokenize_function, batched=True, num_proc=4)
+# Tokenisierung der Trainingsdaten
 
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+tokenizer.pad_token = tokenizer.eos_token  # GPT-2 hat kein Standard-Pad-Token
 
-# Tokenisierung
-tokenizedData = data.map(lambda x: tokenizer(x["text"], padding="max_length", truncation=True), batched=True)
+train_encodings = tokenizer(train_texts, truncation=True, padding=True)
 
-# Modell
-model = AutoModelForCasualLM.from_pretrained(modelName)
+# Erstellen des Datasets
 
-# Trainingsparameter
-TrainingArguments = TrainingArguments(
-    output_dir="./model",
+class CustomDataset(torch.utils.data.Dataset):
+    def __init__(self, encodings):
+        self.input_ids = encodings['input_ids']
+        self.attention_mask = encodings['attention_mask']
+    def __len__(self):
+        return len(self.input_ids)
+    def __getitem__(self, idx):
+        return {
+            'input_ids': torch.tensor(self.input_ids[idx]),
+            'attention_mask': torch.tensor(self.attention_mask[idx]),
+            'labels': torch.tensor(self.input_ids[idx])  # Für die Sprachmodellierung sind die Labels die input_ids
+        }
+
+dataset = CustomDataset(train_encodings)
+
+#  Laden des GPT-2-Modells und Festlegen der Trainingsargumente
+
+model = GPT2LMHeadModel.from_pretrained("gpt2")
+
+training_args = TrainingArguments(
+    output_dir='./gpt2_model',
+    overwrite_output_dir=True,
     num_train_epochs=3,
-    per_device_train_batch_size=8,
-    save_total_limit=10,
-
-    #logging_dir='./logs',
-    #logging_steps=10,
-    #evaluation_strategy="epoch",  # Für regelmäßige Evaluation während des Trainings
-    #weight_decay=0.01,
-    #save_strategy="epoch",  # Speichern nach jeder Epoche
-    #load_best_model_at_end=True,
-
-
+    per_device_train_batch_size=2,
+    save_steps=500,
+    save_total_limit=2,
+    prediction_loss_only=True,
+    logging_steps=100,
+    logging_dir='./logs',
 )
 
-# Trainer
-trainer= Trainer(
+# Initialisieren des Trainers und Starten des Trainings
+
+trainer = Trainer(
     model=model,
-    args=TrainingArguments,
-    train_dataset=tokenizedData["train"],
+    args=training_args,
+    train_dataset=dataset,
 )
 
-# Training
 trainer.train()
 
-# Speichern
-model.save_pretrained("./model")
-tokenizer.save_pretrained("./model")
+# Speichern des feinabgestimmten Modells und Tokenizers
+
+trainer.save_model("./gpt2_model")
+tokenizer.save_pretrained("./gpt2_model")
+
+print("Feinabgestimmtes GPT-2-Modell und Tokenizer wurden gespeichert.")
+
+# Erstellen des FAISS-Index
+
+# Initialisieren des Sentence-Transformer-Modells
+embedder = SentenceTransformer("paraphrase-MiniLM-L6-v2")
+
+# Extrahieren der Produktbeschreibungen
+descriptions = [item["Description"] for item in articles]
+
+# Erzeugen der Vektoren für die Produktbeschreibungen
+vectors = embedder.encode(descriptions)
+
+# Ermitteln der Dimension der Vektoren
+dimension = vectors.shape[1]
+
+# Erstellen des FAISS-Index
+index = faiss.IndexFlatL2(dimension)
+
+# Hinzufügen der Vektoren zum Index
+index.add(np.array(vectors))
+
+# Speichern des FAISS-Index
+faiss.write_index(index, "faissIndex.index")
+print("FAISS-Index wurde gespeichert.")
+
+# Speichern des Sentence-Transformer-Modells
+embedder.save("sentence_transformer_model")
+print("Sentence Transformer Modell wurde gespeichert.")
+
